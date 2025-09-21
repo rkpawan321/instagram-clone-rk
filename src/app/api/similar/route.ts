@@ -25,20 +25,20 @@ export async function GET(request: NextRequest) {
     if (embeddingService.isAvailable()) {
       try {
         if (videoId) {
-          similarVideos = await embeddingsSimilarityEngine.findSimilarByVideoId(videoId, limit + offset);
+          similarVideos = await embeddingsSimilarityEngine.findSimilarByVideoId(videoId, 100);
         } else {
-          similarVideos = await embeddingsSimilarityEngine.findSimilarByQuery(query!, limit + offset);
+          similarVideos = await embeddingsSimilarityEngine.findSimilarByQuery(query!, 100);
         }
         method = 'embeddings';
       } catch (error) {
         console.log('Embeddings failed, falling back to TF-IDF:', error);
         // Fallback to TF-IDF
-        similarVideos = await fallbackToTFIDF(videoId, query, limit + offset);
+        similarVideos = await fallbackToTFIDF(videoId, query, 100);
         method = 'tfidf-fallback';
       }
     } else {
       // No OpenAI API key, use TF-IDF
-      similarVideos = await fallbackToTFIDF(videoId, query, limit + offset);
+      similarVideos = await fallbackToTFIDF(videoId, query, 100);
       method = 'tfidf';
     }
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Fallback to TF-IDF when embeddings are not available
-async function fallbackToTFIDF(videoId: string | null, query: string | null, limit: number) {
+async function fallbackToTFIDF(videoId: string | null, query: string | null, maxResults: number) {
   const { prisma } = await import('@/lib/prisma');
   
   const videos = await prisma.video.findMany({
@@ -91,10 +91,10 @@ async function fallbackToTFIDF(videoId: string | null, query: string | null, lim
   let results: Array<{ video: any; similarity: number }> = [];
 
   if (videoId) {
-    results = similarityEngine.findSimilarByVideoId(videoId, limit);
+    results = similarityEngine.findSimilarByVideoId(videoId, maxResults);
   } else if (query) {
     const processedQuery = preprocessText(query);
-    results = similarityEngine.findSimilarByQuery(processedQuery, limit);
+    results = similarityEngine.findSimilarByQuery(processedQuery, maxResults);
   }
 
   return results.map(result => ({

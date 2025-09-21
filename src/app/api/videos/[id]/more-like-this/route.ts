@@ -54,7 +54,7 @@ export async function POST(
     const processedQuery = preprocessText(searchQuery);
 
     // Find similar videos (get more than needed for pagination)
-    const results = similarityEngine.findSimilarByQuery(processedQuery, limit + offset);
+    const results = similarityEngine.findSimilarByQuery(processedQuery, 100);
 
     // Record the interaction
     await prisma.interaction.upsert({
