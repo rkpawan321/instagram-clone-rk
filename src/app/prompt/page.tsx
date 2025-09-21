@@ -33,7 +33,6 @@ export default function PromptPage() {
   const router = useRouter();
   const [promptData, setPromptData] = useState<PromptData | null>(null);
   const [userHistory, setUserHistory] = useState<UserHistory | null>(null);
-  const [customInput, setCustomInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showStructured, setShowStructured] = useState(false);
 
@@ -54,28 +53,6 @@ export default function PromptPage() {
     }
   };
 
-  const addCustomInput = async () => {
-    if (!customInput.trim()) return;
-
-    try {
-      const response = await fetch('/api/custom-input', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId: 'demo-user-1', 
-          text: customInput.trim() 
-        })
-      });
-      
-      if (response.ok) {
-        setCustomInput('');
-        // Refresh user history
-        fetchUserHistory();
-      }
-    } catch (error) {
-      console.error('Error adding custom input:', error);
-    }
-  };
 
   const fetchUserHistory = async () => {
     try {
@@ -152,27 +129,6 @@ export default function PromptPage() {
           </div>
         )}
 
-        {/* Custom Input */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Add Custom Input</h2>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Describe what kind of video you'd like to create..."
-              value={customInput}
-              onChange={(e) => setCustomInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && addCustomInput()}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <button
-              onClick={addCustomInput}
-              disabled={!customInput.trim()}
-              className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Add
-            </button>
-          </div>
-        </div>
 
         {/* Generate Prompt Button */}
         <div className="text-center mb-8">

@@ -33,52 +33,6 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get liked videos with their descriptions for category analysis
-    const likedVideos = await prisma.interaction.findMany({
-      where: {
-        userId: userId,
-        type: 'LIKE',
-      },
-      include: {
-        video: {
-          select: {
-            title: true,
-            description: true,
-          },
-        },
-      },
-    });
-
-    // Simple category extraction based on keywords in descriptions
-    const categoryCounts: { [key: string]: number } = {};
-    likedVideos.forEach((interaction) => {
-      const description = interaction.video.description.toLowerCase();
-      
-      // Define category keywords
-      const categories = {
-        'Nature': ['nature', 'landscape', 'forest', 'mountain', 'beach', 'ocean', 'tree', 'flower', 'animal', 'wildlife'],
-        'Urban': ['city', 'street', 'building', 'urban', 'downtown', 'traffic', 'car', 'bus', 'road'],
-        'People': ['person', 'people', 'man', 'woman', 'child', 'family', 'group', 'crowd', 'face'],
-        'Food': ['food', 'restaurant', 'meal', 'cooking', 'kitchen', 'dining', 'eat', 'drink'],
-        'Sports': ['sport', 'game', 'ball', 'running', 'swimming', 'basketball', 'football', 'tennis'],
-        'Travel': ['travel', 'vacation', 'hotel', 'airport', 'plane', 'train', 'trip', 'journey'],
-        'Technology': ['computer', 'phone', 'screen', 'digital', 'tech', 'electronic', 'device'],
-        'Art': ['art', 'painting', 'drawing', 'sculpture', 'gallery', 'museum', 'creative', 'design'],
-      };
-
-      // Check each category
-      Object.entries(categories).forEach(([category, keywords]) => {
-        if (keywords.some(keyword => description.includes(keyword))) {
-          categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-        }
-      });
-    });
-
-    // Convert to array and sort by count
-    const mostLikedCategories = Object.entries(categoryCounts)
-      .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
 
     // Get recent activity (last 10 interactions and custom inputs)
     const recentInteractions = await prisma.interaction.findMany({
@@ -160,7 +114,6 @@ export async function GET(request: NextRequest) {
       totalLikes,
       totalMoreLikeThis,
       totalCustomInputs,
-      mostLikedCategories,
       recentActivity: formattedRecentActivity,
     });
 
