@@ -24,6 +24,7 @@ interface VideoResponse {
 }
 
 interface SimilarityResponse {
+  pagination: any;
   videos: Video[];
   query?: string;
   videoId?: string;
@@ -52,6 +53,7 @@ export default function Home() {
   const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isDeveloperMode, setIsDeveloperMode] = useState(false);
   const [pagination, setPagination] = useState({
     offset: 0,
     limit: 20,
@@ -127,7 +129,8 @@ export default function Home() {
         setVideos(prev => [...prev, ...data.videos]);
         setSearchResults(prev => ({
           ...prev,
-          videos: [...prev.videos, ...data.videos],
+          videos: [...(prev?.videos || []), ...data.videos],
+          total: data.total,
           pagination: data.pagination
         }));
       } else {
@@ -245,6 +248,10 @@ export default function Home() {
   useEffect(() => {
     fetchVideos();
     fetchLikedVideos();
+    
+    // Load developer mode from localStorage
+    const savedDeveloperMode = localStorage.getItem('developerMode') === 'true';
+    setIsDeveloperMode(savedDeveloperMode);
   }, []);
 
   // Console log for moreLikeThisDialog changes
@@ -269,6 +276,27 @@ export default function Home() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isMenuOpen]);
+
+  // Infinite scroll loading
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loading || !pagination.hasMore) return;
+
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+
+      // Load more when user is 200px from bottom
+      if (scrollTop + windowHeight >= documentHeight - 200) {
+        loadMore();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [loading, pagination.hasMore]);
 
   const loadMoreSimilarVideos = async () => {
     if (!moreLikeThisDialog.videoId) return;
@@ -323,6 +351,12 @@ export default function Home() {
     }
   };
 
+  const toggleDeveloperMode = () => {
+    const newMode = !isDeveloperMode;
+    setIsDeveloperMode(newMode);
+    localStorage.setItem('developerMode', newMode.toString());
+  };
+
   console.log('🔍 moreLikeThisDialog:', moreLikeThisDialog);
 
   return (
@@ -344,7 +378,7 @@ export default function Home() {
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+              {isDeveloperMode && <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <span className="text-sm font-medium text-gray-700">
                   {isSearchMode ? (
@@ -355,7 +389,7 @@ export default function Home() {
                     `${videos.length} videos`
                   )}
                 </span>
-              </div>
+              </div>}
               
               {/* Burger Menu */}
               <div className="relative burger-menu">
@@ -729,28 +763,28 @@ export default function Home() {
           </>
         )}
 
-        {/* Load More Button */}
-        {pagination.hasMore && (
+        {/* Load More Button - Only show if not using infinite scroll */}
+        {pagination.hasMore && !loading && (
           <div className="flex justify-center mt-12">
             <button
               onClick={loadMore}
-              disabled={loading}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg disabled:shadow-none flex items-center gap-2"
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
             >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Loading...</span>
-                </>
-              ) : (
-                <>
-                  <span>Load More Videos</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </>
-              )}
+              <span>Load More Videos</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
+          </div>
+        )}
+
+        {/* Infinite Scroll Loading Indicator */}
+        {loading && pagination.hasMore && (
+          <div className="flex justify-center mt-8">
+            <div className="flex items-center gap-3 px-6 py-3 bg-white rounded-lg shadow-md">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-purple-200 border-t-purple-500"></div>
+              <span className="text-gray-600 font-medium">Loading more videos...</span>
+            </div>
           </div>
         )}
 
@@ -780,7 +814,7 @@ export default function Home() {
                       </h3>
                     </div>
                     <p className="text-xs text-gray-600 ml-4 line-clamp-2">
-                      "{moreLikeThisDialog?.videoDescription}"
+                      {moreLikeThisDialog?.videoDescription}
                     </p>
                   </div>
                 </div>
@@ -886,6 +920,33 @@ export default function Home() {
                       <p className="text-sm text-gray-500">Generate AI prompts from interactions</p>
                     </div>
                   </button>
+
+                  {/* Developer Mode Toggle */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                          <span className="text-lg">⚙️</span>
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-gray-900">Developer Mode</h3>
+                          {/* <p className="text-sm text-gray-500">Show video counts and debug info</p> */}
+                        </div>
+                      </div>
+                      <button
+                        onClick={toggleDeveloperMode}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                          isDeveloperMode ? 'bg-orange-500' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            isDeveloperMode ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
               

@@ -3,32 +3,48 @@ import { prisma } from '@/lib/prisma';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
-    const { userId } = await request.json();
+    const videoId = params.id;
+    const { userId = 'demo-user-1' } = await request.json();
 
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+    // Check if video exists
+    const video = await prisma.video.findUnique({
+      where: { id: videoId }
+    });
+
+    if (!video) {
+      return NextResponse.json(
+        { error: 'Video not found' },
+        { status: 404 }
+      );
     }
 
     // Find and delete the like interaction
-    const deletedInteraction = await prisma.interaction.deleteMany({
+    const existingLike = await prisma.interaction.findUnique({
       where: {
-        videoId: id,
-        userId: userId,
-        type: 'like',
-      },
+        userId_videoId_type: {
+          userId,
+          videoId,
+          type: 'LIKE'
+        }
+      }
     });
 
-    if (deletedInteraction.count === 0) {
-      return NextResponse.json({ message: 'Video was not liked' }, { status: 404 });
+    if (!existingLike) {
+      return NextResponse.json({ 
+        message: 'Video was not liked' 
+      }, { status: 400 });
     }
 
+    // Delete the like interaction
+    await prisma.interaction.delete({
+      where: { id: existingLike.id }
+    });
+
     return NextResponse.json({ 
-      message: 'Video unliked successfully',
-      count: deletedInteraction.count 
+      message: 'Video unliked successfully'
     });
   } catch (error) {
     console.error('Error unliking video:', error);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 interface UserStats {
   totalLikes: number;
@@ -72,27 +73,26 @@ export default function StatisticsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-3">
-              <a href="/" className="flex items-center gap-2">
+              <Link href="/" className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-sm">IC</span>
                 </div>
                 <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                   InstaClone
                 </h1>
-              </a>
+              </Link>
               <span className="text-gray-400">/</span>
               <h2 className="text-lg font-semibold text-gray-900">My Statistics</h2>
             </div>
             
-            <a
+            <Link
               href="/"
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Back to Feed
-            </a>
+            </Link>
           </div>
         </div>
       </header>
@@ -177,7 +177,12 @@ export default function StatisticsPage() {
                       {activity.type === 'custom-input' && <span className="text-green-500">✏️</span>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{activity.videoTitle}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {activity.type === 'like' && 'Liked: '}
+                        {activity.type === 'more-like-this' && 'More Like This: '}
+                        {activity.type === 'custom-input' && 'Custom Input: '}
+                        {activity.videoTitle}
+                      </p>
                       <p className="text-xs text-gray-500">{activity.timestamp}</p>
                     </div>
                   </div>

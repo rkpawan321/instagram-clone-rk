@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface PromptData {
   structured: {
@@ -29,6 +30,7 @@ interface UserHistory {
 }
 
 export default function PromptPage() {
+  const router = useRouter();
   const [promptData, setPromptData] = useState<PromptData | null>(null);
   const [userHistory, setUserHistory] = useState<UserHistory | null>(null);
   const [customInput, setCustomInput] = useState('');
@@ -114,12 +116,13 @@ export default function PromptPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <h1 className="text-2xl font-bold text-gray-900">AI Prompt Generator</h1>
-            <a 
-              href="/" 
-              className="text-blue-600 hover:text-blue-800 font-medium"
+            <button
+              type="button"
+              onClick={() => router.push('/')}
+              className="text-blue-600 hover:text-blue-800 font-medium bg-transparent border-none p-0 m-0 cursor-pointer"
             >
-              ← Back to Feed
-            </a>
+              ←
+            </button>
           </div>
         </div>
       </header>

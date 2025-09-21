@@ -80,8 +80,8 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Get recent activity (last 10 interactions)
-    const recentActivity = await prisma.interaction.findMany({
+    // Get recent activity (last 10 interactions and custom inputs)
+    const recentInteractions = await prisma.interaction.findMany({
       where: {
         userId: userId,
       },
@@ -98,18 +98,63 @@ export async function GET(request: NextRequest) {
       take: 10,
     });
 
-    // Format recent activity
-    const formattedRecentActivity = recentActivity.map((activity) => ({
-      id: activity.id,
-      type: activity.type,
-      videoTitle: activity.video.title,
-      timestamp: new Date(activity.createdAt).toLocaleDateString('en-US', {
+    const recentCustomInputs = await prisma.customInput.findMany({
+      where: {
+        userId: userId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 10,
+    });
+
+    // Format interactions
+    const formattedInteractions = recentInteractions.map((activity) => {
+      let type = activity.type.toLowerCase();
+      if (type === 'like') {
+        type = 'like';
+      } else if (type === 'more_like_this') {
+        type = 'more-like-this';
+      }
+      
+      return {
+        id: activity.id,
+        type: type,
+        videoTitle: activity.video?.title || 'Unknown Video',
+        timestamp: new Date(activity.createdAt).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+    });
+
+    // Format custom inputs
+    const formattedCustomInputs = recentCustomInputs.map((input) => ({
+      id: input.id,
+      type: 'custom-input',
+      videoTitle: input.text,
+      timestamp: new Date(input.createdAt).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
       }),
     }));
+
+    // Combine and sort by timestamp
+    const formattedRecentActivity = [...formattedInteractions, ...formattedCustomInputs]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 10);
+
+    console.log('🔍 Recent Activity Debug:', {
+      interactions: formattedInteractions.length,
+      customInputs: formattedCustomInputs.length,
+      combined: formattedRecentActivity.length,
+      sample: formattedRecentActivity[0],
+      allTypes: formattedRecentActivity.map(a => ({ type: a.type, title: a.videoTitle }))
+    });
 
     return NextResponse.json({
       totalLikes,
