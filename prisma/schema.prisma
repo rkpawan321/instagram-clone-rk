@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  interactions Interaction[]
+  customInputs CustomInput[]
+}
+
+model Video {
+  id          String        @id @default(cuid())
+  title       String
+  description String
+  url         String?       // Optional video URL
+  thumbnail   String        // Placeholder image URL
+  embedding   String?       // JSON string of embedding vector
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  interactions Interaction[]
+}
+
+model Interaction {
+  id          String   @id @default(cuid())
+  userId      String
+  videoId     String
+  type        String   // "LIKE" | "MORE_LIKE_THIS"
+  note        String?  // For edited query text
+  createdAt   DateTime @default(now())
+  
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, videoId, type])
+}
+
+model CustomInput {
+  id        String   @id @default(cuid())
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
