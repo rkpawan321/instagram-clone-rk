@@ -50,7 +50,12 @@ export class PromptGenerator {
         userId,
         type: 'MORE_LIKE_THIS'
       },
-      include: {
+      select: {
+        id: true,
+        userId: true,
+        videoId: true,
+        type: true,
+        note: true,
         video: {
           select: {
             title: true,
@@ -68,7 +73,7 @@ export class PromptGenerator {
     // Extract keywords and themes from ALL user interactions
     const allDescriptions = [
       ...likedVideos.map(i => i.video.description),
-      ...moreLikeThis.map(i => i.video.description),
+      ...moreLikeThis.map(i => i.note || i.video.description), // Use edited description if available, fallback to original
       ...customInputs.map(i => i.text)
     ];
 
@@ -176,30 +181,52 @@ export class PromptGenerator {
     return sortedThemes.length > 0 ? sortedThemes : ['diverse content'];
   }
 
-  // Extract action words - now data-driven
+  // Extract action words - now data-driven with content filtering
   private extractActions(text: string): string[] {
     const words = text.split(/\s+/);
-    const actionWords = words.filter(word => 
-      word.endsWith('ing') || 
-      word.endsWith('ed') ||
-      ['walk', 'run', 'jump', 'sit', 'stand', 'look', 'see', 'hear', 'feel', 'play', 'perform', 'show', 'create', 'make', 'build', 'design'].includes(word.toLowerCase())
-    );
-    
-    // Count frequency and return most common actions
-    const actionCount: { [key: string]: number } = {};
-    actionWords.forEach(word => {
+
+    // Define appropriate action words for video content
+    const appropriateActions = [
+      'walking', 'running', 'jumping', 'dancing', 'playing', 'performing', 'creating', 'making', 'building', 'designing',
+      'cooking', 'painting', 'drawing', 'singing', 'learning', 'teaching', 'exercising', 'swimming', 'cycling', 'hiking',
+      'exploring', 'traveling', 'gardening', 'reading', 'writing', 'photographing', 'filming', 'skateboarding', 'surfing'
+    ];
+
+    const actionWords = words.filter(word => {
       const cleanWord = word.toLowerCase().replace(/[^\w]/g, '');
-      if (cleanWord.length > 2) {
+      return (
+        (word.endsWith('ing') && cleanWord.length > 4) ||
+        appropriateActions.includes(cleanWord) ||
+        ['walk', 'run', 'jump', 'sit', 'stand', 'play', 'perform', 'show', 'create', 'make', 'build', 'design', 'cook', 'paint', 'draw', 'sing', 'learn', 'teach', 'exercise', 'swim', 'cycle', 'hike'].includes(cleanWord)
+      );
+    });
+
+    // Filter out inappropriate content
+    const inappropriateWords = ['naked', 'nude', 'sexual', 'explicit', 'adult', 'inappropriate'];
+    const filteredActions = actionWords.filter(word =>
+      !inappropriateWords.some(inappropriate => word.toLowerCase().includes(inappropriate))
+    );
+
+    // Count frequency and return most common appropriate actions
+    const actionCount: { [key: string]: number } = {};
+    filteredActions.forEach(word => {
+      const cleanWord = word.toLowerCase().replace(/[^\w]/g, '');
+      if (cleanWord.length > 3) {
         actionCount[cleanWord] = (actionCount[cleanWord] || 0) + 1;
       }
     });
-    
+
     const sortedActions = Object.entries(actionCount)
       .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-      .map(([word]) => word);
-    
-    return sortedActions.length > 0 ? sortedActions : ['engaging activities'];
+      .slice(0, 3)
+      .map(([word]) => this.capitalizeWord(word));
+
+    return sortedActions.length > 0 ? sortedActions : ['Creative Activities', 'Movement', 'Performance'];
+  }
+
+  // Helper method to capitalize words properly
+  private capitalizeWord(word: string): string {
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }
 
   // Extract setting descriptions - now data-driven
@@ -568,9 +595,18 @@ Generate a unique, sophisticated video creation prompt that incorporates these e
     if (descriptions.length === 0) return [];
     if (descriptions.length === 1) return [descriptions];
 
+    const MAX_CLUSTERS = 10; // Maximum number of clusters to create
+    console.log(`🔍 Clustering ALL ${descriptions.length} user interactions`);
+
     try {
+      // Handle large datasets efficiently
+      if (descriptions.length > 100) {
+        console.log('📊 Large dataset detected, using batch processing for embeddings...');
+      }
+
       console.log('🔍 Creating embeddings for clustering...');
-      
+
+      // Create embeddings for ALL descriptions (OpenAI handles batching automatically)
       const embeddingResp = await openai.embeddings.create({
         model: "text-embedding-3-small",
         input: descriptions,
@@ -579,20 +615,22 @@ Generate a unique, sophisticated video creation prompt that incorporates these e
       const vectors = embeddingResp.data.map(d => d.embedding);
       console.log('📊 Generated embeddings for', vectors.length, 'descriptions');
 
-      // Simple similarity-based grouping
+      // Smart clustering algorithm that uses ALL data but creates max 10 clusters
       const clusters: string[][] = [];
       const used = new Set<number>();
 
-      for (let i = 0; i < descriptions.length; i++) {
+      // First pass: Create initial clusters with high similarity threshold
+      for (let i = 0; i < descriptions.length && clusters.length < MAX_CLUSTERS; i++) {
         if (used.has(i)) continue;
-        
+
         const cluster = [descriptions[i]];
         used.add(i);
 
+        // Find similar descriptions and group them
         for (let j = i + 1; j < descriptions.length; j++) {
           if (!used.has(j)) {
             const similarity = this.cosineSimilarity(vectors[i], vectors[j]);
-            if (similarity > 0.8) { // High similarity threshold
+            if (similarity > 0.75) { // High similarity threshold
               cluster.push(descriptions[j]);
               used.add(j);
             }
@@ -601,12 +639,96 @@ Generate a unique, sophisticated video creation prompt that incorporates these e
         clusters.push(cluster);
       }
 
-      console.log('🎯 Created', clusters.length, 'clusters:', clusters.map(c => c.length));
+      // Second pass: Assign remaining descriptions to existing clusters or create new ones
+      const remainingIndices = Array.from({ length: descriptions.length }, (_, i) => i)
+        .filter(i => !used.has(i));
+
+      console.log(`📊 First pass created ${clusters.length} clusters, ${remainingIndices.length} items remaining`);
+
+      for (const i of remainingIndices) {
+        if (used.has(i)) continue;
+
+        let bestClusterIndex = -1;
+        let bestSimilarity = 0;
+
+        // Try to assign to existing clusters first
+        if (clusters.length < MAX_CLUSTERS) {
+          for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex++) {
+            const cluster = clusters[clusterIndex];
+            if (cluster.length < 10) { // Don't let clusters get too large
+              // Check similarity with cluster centroid (first item as representative)
+              const representative = descriptions.indexOf(cluster[0]);
+              if (representative !== -1) {
+                const similarity = this.cosineSimilarity(vectors[i], vectors[representative]);
+                if (similarity > 0.6 && similarity > bestSimilarity) {
+                  bestSimilarity = similarity;
+                  bestClusterIndex = clusterIndex;
+                }
+              }
+            }
+          }
+        }
+
+        if (bestClusterIndex !== -1) {
+          // Add to existing cluster
+          clusters[bestClusterIndex].push(descriptions[i]);
+          used.add(i);
+        } else if (clusters.length < MAX_CLUSTERS) {
+          // Create new cluster
+          const newCluster = [descriptions[i]];
+          used.add(i);
+
+          // Try to find similar items for the new cluster
+          for (let j = i + 1; j < descriptions.length; j++) {
+            if (!used.has(j) && newCluster.length < 8) {
+              const similarity = this.cosineSimilarity(vectors[i], vectors[j]);
+              if (similarity > 0.5) { // Lower threshold for new clusters
+                newCluster.push(descriptions[j]);
+                used.add(j);
+              }
+            }
+          }
+          clusters.push(newCluster);
+        } else {
+          // Max clusters reached, assign to the most similar existing cluster
+          let bestFallbackCluster = 0;
+          let bestFallbackSimilarity = 0;
+
+          for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex++) {
+            const cluster = clusters[clusterIndex];
+            const representative = descriptions.indexOf(cluster[0]);
+            if (representative !== -1) {
+              const similarity = this.cosineSimilarity(vectors[i], vectors[representative]);
+              if (similarity > bestFallbackSimilarity) {
+                bestFallbackSimilarity = similarity;
+                bestFallbackCluster = clusterIndex;
+              }
+            }
+          }
+          clusters[bestFallbackCluster].push(descriptions[i]);
+          used.add(i);
+        }
+      }
+
+      console.log('🎯 Final result:', clusters.length, 'clusters using ALL', descriptions.length, 'interactions');
+      console.log('📊 Cluster sizes:', clusters.map(c => c.length));
+      console.log('✅ Total items clustered:', clusters.reduce((sum, c) => sum + c.length, 0));
+
       return clusters;
     } catch (error) {
       console.error('❌ Error clustering descriptions:', error);
-      // Fallback: return each description as its own cluster
-      return descriptions.map(desc => [desc]);
+      // Fallback: create up to MAX_CLUSTERS by grouping descriptions sequentially
+      const fallbackClusters: string[][] = [];
+      const itemsPerCluster = Math.ceil(descriptions.length / MAX_CLUSTERS);
+
+      for (let i = 0; i < descriptions.length; i += itemsPerCluster) {
+        const cluster = descriptions.slice(i, i + itemsPerCluster);
+        fallbackClusters.push(cluster);
+        if (fallbackClusters.length >= MAX_CLUSTERS) break;
+      }
+
+      console.log('🔄 Fallback: Created', fallbackClusters.length, 'clusters using ALL interactions');
+      return fallbackClusters;
     }
   }
 
@@ -680,7 +802,7 @@ Create a single, focused video prompt that captures the main theme of these desc
     return response.choices[0].message.content?.trim() || '';
   }
 
-  // Combine multiple prompts into a final result
+  // Combine multiple prompts into a final result with enhanced video generation format
   private combinePrompts(prompts: string[], structured?: {
     subject: string;
     actions: string[];
@@ -694,88 +816,125 @@ Create a single, focused video prompt that captures the main theme of these desc
     if (prompts.length === 0) {
       return "Create a video based on your preferences. Start by liking some videos or searching for content you enjoy.";
     }
-    
+
     if (prompts.length === 1) {
       return prompts[0];
     }
-    
-    // Extract key elements from each prompt for the structured format
-    const keyElements = prompts.map(prompt => {
-      // Very simple approach: just get the main subject from the prompt
+
+    // Extract meaningful key elements from each prompt
+    const keyElements = prompts.map((prompt, index) => {
       let element = prompt.trim();
-      
-      // Remove common prefixes and duration specs
-      element = element.replace(/^(?:Create|Produce|Make|Generate)\s*(?:a|an|the)?\s*/i, '');
-      element = element.replace(/\s*\(\d+-\d+\s*minutes?\)/gi, '');
-      element = element.replace(/\s*\(\d+\s*minutes?\)/gi, '');
-      element = element.replace(/^(?:long-form\s+)?video\s*/i, '');
-      
-      // Look for the main subject by finding key nouns and their descriptors
-      // Try to find patterns like "a [adjective] [noun]" or "[noun] [action]"
-      const mainSubjectPatterns = [
-        // Pattern 1: "a [adjective] [noun] [doing something]"
-        /(?:a|an|the)\s+(\w+\s+\w+)\s+(?:performing|standing|playing|dancing|cycling|interaction|match|day|performance|beach|dog|cat|bird|child|woman|girl|volleyball|wheelies|boogie|board)/i,
-        // Pattern 2: "[adjective] [noun] [action]"
-        /(\w+\s+\w+)\s+(?:performing|standing|playing|dancing|cycling|interaction|match|day|performance)/i,
-        // Pattern 3: "[noun] [action]"
-        /(\w+)\s+(?:performing|standing|playing|dancing|cycling|interaction|match|day|performance)/i,
-        // Pattern 4: "a [adjective] [noun]"
-        /(?:a|an|the)\s+(\w+\s+\w+)/i,
-        // Pattern 5: "[adjective] [noun]"
-        /(\w+\s+\w+)/i
+      console.log(`🔍 Processing prompt ${index + 1}:`, element.substring(0, 100) + '...');
+
+      // Remove common video generation prefixes
+      element = element.replace(/^(?:Create|Produce|Make|Generate|Film)\s*(?:a|an|the)?\s*/i, '');
+      element = element.replace(/\s*(?:video|content|footage)\s*/gi, ' ');
+      element = element.replace(/\s*\(\d+-\d+\s*(?:minutes?|seconds?)\)/gi, '');
+      element = element.replace(/\s*\(\d+\s*(?:minutes?|seconds?)\)/gi, '');
+
+      // Enhanced pattern matching for better subject extraction
+      const subjectPatterns = [
+        // Pattern 1: "person/people doing activity" - prioritize human subjects
+        /(?:featuring|showing|of)\s+(?:a|an|the)?\s*([a-zA-Z\s]+(?:person|people|man|woman|child|children|individual|group))\s+(?:who|that|performing|doing|playing|dancing|working|engaging)/i,
+
+        // Pattern 2: "adjective + noun + action" - good descriptive subjects
+        /(?:featuring|showing|of)?\s*(?:a|an|the)?\s*([a-zA-Z]+\s+[a-zA-Z]+)\s+(?:performing|doing|playing|dancing|cycling|swimming|running|walking|working|creating|practicing)/i,
+
+        // Pattern 3: Main subject at start of cleaned text
+        /^(?:a|an|the)?\s*([a-zA-Z\s]{4,20})\s+(?:in|at|on|during|while|performing|doing)/i,
+
+        // Pattern 4: Activity-focused extraction
+        /(?:featuring|showing|capturing|documenting)\s+(?:a|an|the)?\s*([a-zA-Z\s]{4,25})/i,
+
+        // Pattern 5: Simple noun phrases
+        /^(?:a|an|the)?\s*([a-zA-Z]+(?:\s+[a-zA-Z]+){1,2})/i
       ];
-      
+
       let extracted = '';
-      for (const pattern of mainSubjectPatterns) {
+      for (const pattern of subjectPatterns) {
         const match = element.match(pattern);
-        if (match && match[1] && match[1].length > 3) {
-          extracted = match[1].trim();
-          break;
+        if (match && match[1]) {
+          let candidate = match[1].trim();
+
+          // Validate the extraction
+          if (candidate.length >= 4 && candidate.length <= 30 &&
+              !candidate.match(/^(?:the|and|that|with|from|this|they|have|been|were|their|video|content|footage)$/i)) {
+            extracted = candidate;
+            break;
+          }
         }
       }
-      
-      // If no pattern matched, try to get meaningful words
-      if (!extracted || extracted.length < 3) {
-        const words = element.split(/\s+/).filter(word => 
-          word.length > 2 && 
-          !['the', 'and', 'that', 'with', 'from', 'this', 'they', 'have', 'been', 'were', 'their', 'n', 'a', 'an'].includes(word.toLowerCase())
+
+      // Fallback: extract meaningful noun phrases
+      if (!extracted) {
+        const words = element.split(/\s+/).filter(word =>
+          word.length > 3 &&
+          !['the', 'and', 'that', 'with', 'from', 'this', 'they', 'have', 'been', 'were', 'their', 'video', 'content', 'footage', 'scene', 'showing', 'featuring'].includes(word.toLowerCase()) &&
+          !word.match(/^(?:performing|doing|playing|dancing|cycling|swimming|running|walking|working|creating|practicing)$/i)
         );
+
         if (words.length >= 2) {
           extracted = words.slice(0, 2).join(' ');
         } else if (words.length === 1) {
           extracted = words[0];
-        } else {
-          extracted = 'diverse content';
         }
       }
-      
-      // Clean up
-      extracted = extracted.replace(/\b(heartwarming|captivating|engaging|dynamic|compelling|informative|long-form|short-form|cinematic|documentary|video|content|footage|scene|shot|sequence|showcasing|capturing|featuring|highlighting|emphasizing|documenting|exploring|celebrates|celebrating|thrilling|elaborate|within)\b/gi, '');
-      extracted = extracted.replace(/\s+/g, ' ').trim();
-      extracted = extracted.replace(/^[,.\s]+|[,.\s]+$/g, '');
-      
-      // Final validation
-      if (extracted.length < 3 || extracted === 'n' || extracted === 'a' || extracted === 'the' || extracted === 'their') {
-        extracted = 'diverse content';
+
+      // Clean up the extracted subject
+      if (extracted) {
+        // Remove video-related adjectives
+        extracted = extracted.replace(/\b(?:heartwarming|captivating|engaging|dynamic|compelling|informative|cinematic|documentary|thrilling|elaborate|stunning|beautiful|amazing|incredible|professional|high-quality)\b/gi, '');
+
+        // Clean up spacing and punctuation
+        extracted = extracted.replace(/\s+/g, ' ').trim();
+        extracted = extracted.replace(/^[,.\s]+|[,.\s]+$/g, '');
+
+        // Capitalize first letter of each word
+        extracted = extracted.replace(/\b\w/g, l => l.toUpperCase());
       }
-      
+
+      // Final validation and fallback
+      if (!extracted || extracted.length < 4 || extracted.match(/^(?:A|The|And|That|With|From)$/i)) {
+        extracted = `Content Theme ${index + 1}`;
+      }
+
+      console.log(`✅ Extracted subject ${index + 1}:`, extracted);
       return extracted;
     });
-    
-    // Create a structured video generation prompt for AI video generators
+
+    // Create enhanced structured video generation prompt for AI video generators
     const contextDescription = this.generateUserContext(keyElements, structured);
-    const structuredPrompt = `video_prompt:
-  context: "${contextDescription}"
-  subject:
-${keyElements.map(element => `    - "${element}"`).join('\n')}
-  style: "${structured?.style || 'cinematic'}"
-  setting: "${structured?.setting || 'dynamic environments'}"
-  mood: "${structured?.mood || 'engaging'}"
-  duration: "${structured?.duration || '30-60 seconds'}"
-  lighting: "${structured?.lighting || 'high quality'}"
-  colors:
-${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"`).join('\n')}`;
-    
+    const structuredPrompt = `# AI Video Generation Prompt
+
+## Context
+${contextDescription}
+
+## Video Specifications
+
+### Content
+**Main Subjects:**
+${keyElements.map(element => `  • ${element}`).join('\n')}
+
+**Actions & Movements:**
+${structured?.actions?.map(action => `  • ${action}`) || ['  • engaging activities']}
+
+### Technical Specifications
+- **Style:** ${structured?.style || 'cinematic'}
+- **Duration:** ${structured?.duration || '30-60 seconds'}
+- **Setting:** ${structured?.setting || 'dynamic environments'}
+- **Mood/Tone:** ${structured?.mood || 'engaging'}
+- **Lighting:** ${structured?.lighting || 'high quality, professional lighting'}
+- **Color Palette:** ${(structured?.colors || ['vibrant', 'cohesive']).join(', ')}
+
+### Production Notes
+- Focus on visual storytelling
+- Maintain consistent style throughout
+- Ensure smooth transitions between scenes
+- Optimize for social media sharing
+
+---
+*Generated from ${prompts.length} personalized content themes*`;
+
     return structuredPrompt;
   }
 
@@ -844,171 +1003,7 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
     return prompt;
   }
 
-  // Analyze user's content patterns for sophisticated prompt generation
-  private analyzeUserProfile(analysis: {
-    rawDescriptions: string[];
-    totalItems: number;
-  }): {
-    complexityLevel: string;
-    diversityLevel: string;
-    engagementLevel: string;
-    themes: {
-      visual: string[];
-      emotional: string[];
-      narrative: string[];
-      technical: string[];
-      cultural: string[];
-    };
-    totalInteractions: number;
-    avgDescriptionLength: number;
-  } {
-    const { rawDescriptions, totalItems } = analysis;
-    
-    // Analyze content complexity
-    const avgDescriptionLength = rawDescriptions.reduce((sum: number, desc: string) => sum + desc.length, 0) / rawDescriptions.length;
-    const complexityLevel = avgDescriptionLength > 100 ? 'high' : avgDescriptionLength > 50 ? 'medium' : 'low';
-    
-    // Analyze content diversity
-    const uniqueWords = new Set(rawDescriptions.join(' ').toLowerCase().split(/\s+/));
-    const diversityLevel = uniqueWords.size > 200 ? 'high' : uniqueWords.size > 100 ? 'medium' : 'low';
-    
-    // Analyze engagement level
-    const engagementLevel = totalItems > 20 ? 'high' : totalItems > 10 ? 'medium' : 'low';
-    
-    // Analyze content themes
-    const themes = this.extractContentThemes(rawDescriptions);
-    
-    return {
-      complexityLevel,
-      diversityLevel,
-      engagementLevel,
-      themes,
-      totalInteractions: totalItems,
-      avgDescriptionLength
-    };
-  }
 
-  // Extract sophisticated content themes
-  private extractContentThemes(descriptions: string[]): {
-    visual: string[];
-    emotional: string[];
-    narrative: string[];
-    technical: string[];
-    cultural: string[];
-  } {
-    const allText = descriptions.join(' ').toLowerCase();
-    
-    // Advanced theme detection
-    const themes = {
-      visual: this.detectVisualThemes(allText),
-      emotional: this.detectEmotionalThemes(allText),
-      narrative: this.detectNarrativeThemes(allText),
-      technical: this.detectTechnicalThemes(allText),
-      cultural: this.detectCulturalThemes(allText)
-    };
-    
-    return themes;
-  }
-
-  // Detect visual themes from content
-  private detectVisualThemes(text: string): string[] {
-    const visualKeywords = {
-      'cinematic': ['cinematic', 'film', 'movie', 'dramatic', 'epic', 'grand'],
-      'documentary': ['documentary', 'real', 'authentic', 'natural', 'candid'],
-      'artistic': ['artistic', 'creative', 'abstract', 'surreal', 'experimental'],
-      'lifestyle': ['lifestyle', 'daily', 'routine', 'personal', 'intimate'],
-      'travel': ['travel', 'adventure', 'exploration', 'journey', 'destination']
-    };
-    
-    const foundThemes = [];
-    for (const [theme, keywords] of Object.entries(visualKeywords)) {
-      if (keywords.some(keyword => text.includes(keyword))) {
-        foundThemes.push(theme);
-      }
-    }
-    
-    return foundThemes;
-  }
-
-  // Detect emotional themes from content
-  private detectEmotionalThemes(text: string): string[] {
-    const emotionalKeywords = {
-      'nostalgic': ['nostalgic', 'memories', 'past', 'childhood', 'remember'],
-      'inspiring': ['inspiring', 'motivational', 'uplifting', 'positive', 'hope'],
-      'melancholic': ['melancholic', 'sad', 'lonely', 'quiet', 'contemplative'],
-      'energetic': ['energetic', 'dynamic', 'exciting', 'vibrant', 'lively'],
-      'peaceful': ['peaceful', 'calm', 'serene', 'tranquil', 'meditative']
-    };
-    
-    const foundThemes = [];
-    for (const [theme, keywords] of Object.entries(emotionalKeywords)) {
-      if (keywords.some(keyword => text.includes(keyword))) {
-        foundThemes.push(theme);
-      }
-    }
-    
-    return foundThemes;
-  }
-
-  // Detect narrative themes from content
-  private detectNarrativeThemes(text: string): string[] {
-    const narrativeKeywords = {
-      'storytelling': ['story', 'narrative', 'tale', 'journey', 'adventure'],
-      'character': ['character', 'person', 'people', 'individual', 'portrait'],
-      'environment': ['environment', 'setting', 'place', 'location', 'space'],
-      'action': ['action', 'movement', 'activity', 'event', 'happening'],
-      'concept': ['concept', 'idea', 'theme', 'message', 'meaning']
-    };
-    
-    const foundThemes = [];
-    for (const [theme, keywords] of Object.entries(narrativeKeywords)) {
-      if (keywords.some(keyword => text.includes(keyword))) {
-        foundThemes.push(theme);
-      }
-    }
-    
-    return foundThemes;
-  }
-
-  // Detect technical themes from content
-  private detectTechnicalThemes(text: string): string[] {
-    const technicalKeywords = {
-      'lighting': ['lighting', 'light', 'shadow', 'bright', 'dark', 'illumination'],
-      'composition': ['composition', 'framing', 'angle', 'perspective', 'shot'],
-      'color': ['color', 'palette', 'hue', 'tone', 'saturation', 'vibrant'],
-      'movement': ['movement', 'motion', 'camera', 'tracking', 'panning'],
-      'editing': ['editing', 'cut', 'transition', 'sequence', 'rhythm']
-    };
-    
-    const foundThemes = [];
-    for (const [theme, keywords] of Object.entries(technicalKeywords)) {
-      if (keywords.some(keyword => text.includes(keyword))) {
-        foundThemes.push(theme);
-      }
-    }
-    
-    return foundThemes;
-  }
-
-  // Detect cultural themes from content
-  private detectCulturalThemes(text: string): string[] {
-    const culturalKeywords = {
-      'urban': ['urban', 'city', 'street', 'downtown', 'metropolitan'],
-      'nature': ['nature', 'wilderness', 'outdoor', 'landscape', 'environment'],
-      'cultural': ['cultural', 'tradition', 'heritage', 'custom', 'ritual'],
-      'modern': ['modern', 'contemporary', 'current', 'today', 'now'],
-      'timeless': ['timeless', 'classic', 'eternal', 'universal', 'everlasting']
-    };
-    
-    const foundThemes = [];
-    for (const [theme, keywords] of Object.entries(culturalKeywords)) {
-      if (keywords.some(keyword => text.includes(keyword))) {
-        foundThemes.push(theme);
-      }
-    }
-    
-    return foundThemes;
-  }
 
 
 
@@ -1161,7 +1156,14 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
       }),
       prisma.interaction.findMany({
         where: { userId, type: 'MORE_LIKE_THIS' },
-        include: { video: { select: { title: true, description: true } } }
+        select: {
+          id: true,
+          userId: true,
+          videoId: true,
+          type: true,
+          note: true,
+          video: { select: { title: true, description: true } }
+        }
       }),
       prisma.customInput.findMany({
         where: { userId }

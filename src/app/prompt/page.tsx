@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Copy, Download, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Eye, EyeOff, Share2, FileText, Sparkles } from 'lucide-react';
 
 interface PromptData {
   structured: {
@@ -243,19 +243,88 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
 
   const downloadPrompt = () => {
     if (!promptData) return;
-    
+
     // Create modified prompt data with editable prompt
     const modifiedPromptData = {
       ...promptData,
       prompt: editablePrompt
     };
-    
+
     const dataStr = JSON.stringify(modifiedPromptData, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'ai-prompt.json';
+    link.download = 'ai-video-prompt.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const sharePrompt = async () => {
+    if (!promptData) return;
+
+    const shareData = {
+      title: 'AI Video Generation Prompt',
+      text: `Check out this AI video prompt:\n\n${editablePrompt}`,
+      url: window.location.href
+    };
+
+    try {
+      if (navigator.share && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+      } else {
+        // Fallback: copy to clipboard
+        await navigator.clipboard.writeText(`${shareData.title}\n\n${shareData.text}`);
+        alert('Prompt copied to clipboard!');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+      // Final fallback: copy to clipboard
+      try {
+        await navigator.clipboard.writeText(editablePrompt);
+        alert('Prompt copied to clipboard!');
+      } catch (clipboardError) {
+        console.error('Clipboard error:', clipboardError);
+      }
+    }
+  };
+
+  const exportAsMarkdown = () => {
+    if (!promptData) return;
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    const markdown = `# AI Video Generation Prompt
+*Generated on ${timestamp}*
+
+## Main Prompt
+\`\`\`
+${editablePrompt}
+\`\`\`
+
+## Structured Data
+- **Subject:** ${promptData.structured.subject}
+- **Style:** ${promptData.structured.style}
+- **Setting:** ${promptData.structured.setting}
+- **Mood:** ${promptData.structured.mood}
+- **Duration:** ${promptData.structured.duration}
+- **Lighting:** ${promptData.structured.lighting}
+- **Actions:** ${promptData.structured.actions.join(', ')}
+- **Colors:** ${promptData.structured.colors.join(', ')}
+
+## Source Data
+- **Liked Videos:** ${promptData.sources.likedVideos}
+- **More Like This:** ${promptData.sources.moreLikeThis}
+- **Custom Inputs:** ${promptData.sources.customInputs}
+
+---
+*Generated with AI Prompt Generator*
+`;
+
+    const dataBlob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ai-video-prompt-${timestamp}.md`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -276,7 +345,7 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-2xl font-bold text-gray-900">AI Prompt Generator</h1>
+            <h1 className="text-2xl font-bold text-gray-900">AI Video Prompt Generator</h1>
             <button
               type="button"
               onClick={() => router.push('/')}
@@ -334,8 +403,8 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span>Generate AI Prompt</span>
-                <div className="group-hover:translate-x-1 transition-transform duration-200">✨</div>
+                <span>Generate Video Prompt</span>
+                <div className="group-hover:translate-x-1 transition-transform duration-200">🎥</div>
               </div>
             )}
           </button>
@@ -346,7 +415,7 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
           <div className="space-y-8">
             {/* Generated AI Prompt Title */}
             <div className="text-center">
-              <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">Generated AI Prompt</h2>
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">Generated Video Prompt</h2>
               <div className="w-24 h-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mx-auto"></div>
             </div>
 
@@ -386,7 +455,7 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
                               e.target.style.height = 'auto';
                               e.target.style.height = e.target.scrollHeight + 'px';
                             }}
-                            className="w-full min-h-20 bg-transparent text-gray-800 leading-relaxed text-base resize-none border-none outline-none focus:ring-0 overflow-hidden"
+                            className="w-full min-h-40 bg-transparent text-gray-800 leading-relaxed text-base resize-none border-none outline-none focus:ring-0 overflow-hidden"
                             style={{ height: 'auto' }}
                           />
                         </div>
@@ -408,7 +477,7 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
                   ref={setTextareaRef}
                   value={editablePrompt}
                   onChange={handlePromptChange}
-                  className="w-full min-h-32 bg-transparent text-gray-800 leading-relaxed text-lg font-medium resize-none border-none outline-none focus:ring-0 overflow-hidden"
+                  className="w-full min-h-60 bg-transparent text-gray-800 leading-relaxed text-lg font-medium resize-none border-none outline-none focus:ring-0 overflow-hidden"
                   placeholder="Your AI prompt will appear here..."
                   style={{ height: 'auto' }}
                 />
@@ -416,7 +485,7 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
             </div>
 
             {/* Action Buttons */}
-            <div className="flex justify-center gap-4">
+            <div className="flex justify-center gap-4 flex-wrap">
               <button
                 onClick={copyToClipboard}
                 className="group w-14 h-14 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full hover:from-blue-600 hover:to-blue-700 flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-lg hover:shadow-2xl"
@@ -425,11 +494,25 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
                 <Copy className="w-6 h-6 group-hover:scale-110 transition-transform duration-200" />
               </button>
               <button
+                onClick={sharePrompt}
+                className="group w-14 h-14 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-full hover:from-purple-600 hover:to-purple-700 flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-lg hover:shadow-2xl"
+                title="Share Prompt"
+              >
+                <Share2 className="w-6 h-6 group-hover:scale-110 transition-transform duration-200" />
+              </button>
+              <button
                 onClick={downloadPrompt}
                 className="group w-14 h-14 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-full hover:from-green-600 hover:to-green-700 flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-lg hover:shadow-2xl"
                 title="Download JSON"
               >
                 <Download className="w-6 h-6 group-hover:scale-110 transition-transform duration-200" />
+              </button>
+              <button
+                onClick={exportAsMarkdown}
+                className="group w-14 h-14 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full hover:from-orange-600 hover:to-orange-700 flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-lg hover:shadow-2xl"
+                title="Export as Markdown"
+              >
+                <FileText className="w-6 h-6 group-hover:scale-110 transition-transform duration-200" />
               </button>
               <button
                 onClick={() => setShowStructured(!showStructured)}
@@ -521,3 +604,4 @@ ${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"
     </div>
   );
 }
+
