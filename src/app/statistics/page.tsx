@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { X, Heart, Search, Edit3 } from 'lucide-react';
+import { X, Heart, Search, Edit3, ArrowLeft } from 'lucide-react';
 
 interface UserStats {
   totalLikes: number;
@@ -178,11 +178,9 @@ export default function StatisticsPage() {
             
             <Link
               href="/"
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
+              <ArrowLeft className="w-5 h-5" />
             </Link>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 
 interface PromptData {
   structured: {
@@ -96,9 +97,9 @@ export default function PromptPage() {
             <button
               type="button"
               onClick={() => router.push('/')}
-              className="text-blue-600 hover:text-blue-800 font-medium bg-transparent border-none p-0 m-0 cursor-pointer"
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              ←
+              <ArrowLeft className="w-5 h-5" />
             </button>
           </div>
         </div>
