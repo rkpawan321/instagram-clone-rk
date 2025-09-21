@@ -93,152 +93,15 @@ export default function PromptPage() {
 
   const handleIndividualPromptChange = (index: number, value: string) => {
     if (!promptData) return;
-    
+
     const newPrompts = [...promptData.prompts];
     newPrompts[index] = value;
-    
-    // Update the combined prompt by recombining all individual prompts
-    const newCombinedPrompt = combinePrompts(newPrompts, promptData.structured);
-    
-    setPromptData({ 
-      ...promptData, 
-      prompts: newPrompts,
-      prompt: newCombinedPrompt
-    });
-    setEditablePrompt(newCombinedPrompt);
-  };
 
-  const combinePrompts = (prompts: string[], structured?: {
-    subject: string;
-    actions: string[];
-    style: string;
-    setting: string;
-    mood: string;
-    duration: string;
-    lighting: string;
-    colors: string[];
-  }): string => {
-    if (prompts.length === 0) {
-      return "Create a video based on your preferences. Start by liking some videos or searching for content you enjoy.";
-    }
-    
-    if (prompts.length === 1) {
-      return prompts[0];
-    }
-    
-    // Extract key elements from each prompt for the structured format
-    const keyElements = prompts.map(prompt => {
-      // Very simple approach: just get the main subject from the prompt
-      let element = prompt.trim();
-      
-      // Remove common prefixes and duration specs
-      element = element.replace(/^(?:Create|Produce|Make|Generate)\s*(?:a|an|the)?\s*/i, '');
-      element = element.replace(/\s*\(\d+-\d+\s*minutes?\)/gi, '');
-      element = element.replace(/\s*\(\d+\s*minutes?\)/gi, '');
-      element = element.replace(/^(?:long-form\s+)?video\s*/i, '');
-      
-      // Look for the main subject by finding key nouns and their descriptors
-      // Try to find patterns like "a [adjective] [noun]" or "[noun] [action]"
-      const mainSubjectPatterns = [
-        // Pattern 1: "a [adjective] [noun] [doing something]"
-        /(?:a|an|the)\s+(\w+\s+\w+)\s+(?:performing|standing|playing|dancing|cycling|interaction|match|day|performance|beach|dog|cat|bird|child|woman|girl|volleyball|wheelies|boogie|board)/i,
-        // Pattern 2: "[adjective] [noun] [action]"
-        /(\w+\s+\w+)\s+(?:performing|standing|playing|dancing|cycling|interaction|match|day|performance)/i,
-        // Pattern 3: "[noun] [action]"
-        /(\w+)\s+(?:performing|standing|playing|dancing|cycling|interaction|match|day|performance)/i,
-        // Pattern 4: "a [adjective] [noun]"
-        /(?:a|an|the)\s+(\w+\s+\w+)/i,
-        // Pattern 5: "[adjective] [noun]"
-        /(\w+\s+\w+)/i
-      ];
-      
-      let extracted = '';
-      for (const pattern of mainSubjectPatterns) {
-        const match = element.match(pattern);
-        if (match && match[1] && match[1].length > 3) {
-          extracted = match[1].trim();
-          break;
-        }
-      }
-      
-      // If no pattern matched, try to get meaningful words
-      if (!extracted || extracted.length < 3) {
-        const words = element.split(/\s+/).filter(word => 
-          word.length > 2 && 
-          !['the', 'and', 'that', 'with', 'from', 'this', 'they', 'have', 'been', 'were', 'their', 'n', 'a', 'an'].includes(word.toLowerCase())
-        );
-        if (words.length >= 2) {
-          extracted = words.slice(0, 2).join(' ');
-        } else if (words.length === 1) {
-          extracted = words[0];
-        } else {
-          extracted = 'diverse content';
-        }
-      }
-      
-      // Clean up
-      extracted = extracted.replace(/\b(heartwarming|captivating|engaging|dynamic|compelling|informative|long-form|short-form|cinematic|documentary|video|content|footage|scene|shot|sequence|showcasing|capturing|featuring|highlighting|emphasizing|documenting|exploring|celebrates|celebrating|thrilling|elaborate|within)\b/gi, '');
-      extracted = extracted.replace(/\s+/g, ' ').trim();
-      extracted = extracted.replace(/^[,.\s]+|[,.\s]+$/g, '');
-      
-      // Final validation
-      if (extracted.length < 3 || extracted === 'n' || extracted === 'a' || extracted === 'the' || extracted === 'their') {
-        extracted = 'diverse content';
-      }
-      
-      return extracted;
+    setPromptData({
+      ...promptData,
+      prompts: newPrompts
     });
-    
-    // Generate user context
-    const generateUserContext = (keyElements: string[], structured?: {
-      subject: string;
-      actions: string[];
-      style: string;
-      setting: string;
-      mood: string;
-      duration: string;
-      lighting: string;
-      colors: string[];
-    }): string => {
-      // Show ALL user interests clearly
-      const allInterests = keyElements.filter(el => el && el !== 'Video content');
-      
-      // Create a comprehensive context description
-      let context = `This user enjoys content about: ${allInterests.join(', ')}`;
-      
-      // Add style and mood preferences
-      context += `. They prefer ${structured?.style || 'cinematic'} style videos with ${structured?.mood || 'engaging'} mood`;
-      
-      // Add setting preferences if available
-      if (structured?.setting && structured.setting !== 'dynamic environments') {
-        context += `, often set in ${structured.setting}`;
-      }
-      
-      // Add duration preference
-      if (structured?.duration) {
-        context += `. Duration preference: ${structured.duration}`;
-      }
-      
-      context += '.';
-      
-      return context;
-    };
-
-    // Create a structured video generation prompt for AI video generators
-    const contextDescription = generateUserContext(keyElements, structured);
-    const structuredPrompt = `video_prompt:
-  context: "${contextDescription}"
-  subject:
-${keyElements.map(element => `    - "${element}"`).join('\n')}
-  style: "${structured?.style || 'cinematic'}"
-  setting: "${structured?.setting || 'dynamic environments'}"
-  mood: "${structured?.mood || 'engaging'}"
-  duration: "${structured?.duration || '30-60 seconds'}"
-  lighting: "${structured?.lighting || 'high quality'}"
-  colors:
-${(structured?.colors || ['vibrant', 'cohesive']).map(color => `    - "${color}"`).join('\n')}`;
-    
-    return structuredPrompt;
+    // No longer auto-update combined prompt - let user manage it manually
   };
 
   const downloadPrompt = () => {

@@ -384,10 +384,10 @@ export class PromptGenerator {
       console.log('📊 Generated clusters:', clusters.length, 'clusters');
       
       // Generate prompts for each cluster
-      const individualPrompts = await this.generatePromptsForClusters(clusters, structured);
-      
-      // Combine prompts for the main prompt
-      const combinedPrompt = this.combinePrompts(individualPrompts, structured);
+      const individualPrompts = await this.generatePromptsForClusters(clusters);
+
+      // Combine prompts for the main prompt using OpenAI
+      const combinedPrompt = await this.combinePrompts(individualPrompts, structured);
       
       console.log('✨ Generated AI prompts:', individualPrompts.length, 'individual prompts');
       console.log('✨ Combined prompt:', combinedPrompt);
@@ -743,9 +743,7 @@ Generate a unique, sophisticated video creation prompt that incorporates these e
   }
 
   // Generate prompts for each cluster
-  private async generatePromptsForClusters(clusters: string[][], structured: {
-    duration: string;
-  }): Promise<string[]> {
+  private async generatePromptsForClusters(clusters: string[][]): Promise<string[]> {
     const allPrompts: string[] = [];
     
     for (let i = 0; i < clusters.length; i++) {
@@ -753,7 +751,7 @@ Generate a unique, sophisticated video creation prompt that incorporates these e
       console.log(`🎨 Generating prompt for cluster ${i + 1}/${clusters.length} with ${cluster.length} items`);
       
       try {
-        const prompt = await this.generatePromptForCluster(cluster, structured);
+        const prompt = await this.generatePromptForCluster(cluster);
         if (prompt) {
           allPrompts.push(prompt);
         }
@@ -766,28 +764,24 @@ Generate a unique, sophisticated video creation prompt that incorporates these e
   }
 
   // Generate a single prompt for a specific cluster
-  private async generatePromptForCluster(cluster: string[], structured: {
-    duration: string;
-  }): Promise<string> {
-    const systemPrompt = `You are an expert AI video prompt generator. Your task is to create sophisticated, safe, and coherent video generation prompts.
+  private async generatePromptForCluster(cluster: string[]): Promise<string> {
+    const systemPrompt = `You are an expert AI video prompt generator. Create concise, focused video prompts.
 
 Rules:
-- Do NOT combine unrelated topics into one prompt
-- Keep all outputs safe, family-friendly, and coherent
-- Focus on the main theme of the provided descriptions
-- Create a single, focused video prompt
-- Use professional, engaging language
-- Make it specific and actionable for video creation
+- Keep prompts SHORT (1-2 sentences maximum)
+- Focus on the main visual theme only
+- Use simple, clear language
+- Make it actionable for video creation
+- NO lengthy descriptions or multiple scenes
 
-The prompt should be 1-2 sentences long and focus on the primary theme.`;
+Example format: "Create a [style] video of [main subject] [doing action] in [setting]"
+Example: "Create a cinematic video of a dog playing in a park with warm lighting"`;
 
-    const userPrompt = `Generate a structured video creation prompt based on these related descriptions:
+    const userPrompt = `Based on these descriptions, create ONE short video prompt:
 
 ${cluster.map((desc, i) => `${i + 1}. ${desc}`).join('\n')}
 
-Video duration: ${structured.duration}
-
-Create a single, focused video prompt that captures the main theme of these descriptions.`;
+Create a concise prompt (1-2 sentences) focusing on the main visual theme.`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -795,15 +789,84 @@ Create a single, focused video prompt that captures the main theme of these desc
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
       ],
-      max_tokens: 250,
+      max_tokens: 100,
       temperature: 0.7
     });
 
     return response.choices[0].message.content?.trim() || '';
   }
 
-  // Combine multiple prompts into a final result with enhanced video generation format
-  private combinePrompts(prompts: string[], structured?: {
+  // Combine multiple prompts using OpenAI to create the final structured prompt
+  private async combinePrompts(prompts: string[], structured?: {
+    subject: string;
+    actions: string[];
+    style: string;
+    setting: string;
+    mood: string;
+    duration: string;
+    lighting: string;
+    colors: string[];
+  }): Promise<string> {
+    if (prompts.length === 0) {
+      return "Create a video based on your preferences. Start by liking some videos or searching for content you enjoy.";
+    }
+
+    if (prompts.length === 1) {
+      return prompts[0];
+    }
+
+    try {
+      console.log('🤖 Using OpenAI to combine and structure prompts...');
+
+      const systemPrompt = `You are an expert AI video prompt generator. Create a concise, professional video generation prompt.
+
+Rules:
+- Keep it SHORT and focused (under 200 words)
+- Extract main themes from the individual prompts
+- Use clear, actionable language
+- Include key technical specs
+- Format as clean markdown
+
+Example format:
+# Video Generation Prompt
+**Style:** [style] | **Duration:** [duration] | **Setting:** [setting]
+**Main Subjects:** [list main subjects]
+**Actions:** [key actions]
+**Mood:** [mood] | **Lighting:** [lighting] | **Colors:** [colors]
+
+[Brief 2-3 sentence description of the video concept]`;
+
+      const userPrompt = `Combine these prompts into one concise video generation prompt:
+
+${prompts.map((prompt, i) => `${i + 1}. ${prompt}`).join('\n')}
+
+Style: ${structured?.style || 'cinematic'} | Duration: ${structured?.duration || '30-60 seconds'} | Setting: ${structured?.setting || 'dynamic environments'}
+Mood: ${structured?.mood || 'engaging'} | Lighting: ${structured?.lighting || 'high quality'} | Colors: ${structured?.colors?.join(', ') || 'vibrant'}
+
+Create a short, focused prompt under 200 words.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        max_tokens: 300,
+        temperature: 0.7
+      });
+
+      const combinedPrompt = response.choices[0].message.content?.trim();
+      console.log('✅ OpenAI successfully combined prompts');
+
+      return combinedPrompt || this.generateFallbackCombinedPrompt(prompts, structured);
+    } catch (error) {
+      console.error('❌ Error combining prompts with OpenAI:', error);
+      return this.generateFallbackCombinedPrompt(prompts, structured);
+    }
+  }
+
+  // Fallback method if OpenAI fails
+  private generateFallbackCombinedPrompt(prompts: string[], structured?: {
     subject: string;
     actions: string[];
     style: string;
@@ -813,129 +876,31 @@ Create a single, focused video prompt that captures the main theme of these desc
     lighting: string;
     colors: string[];
   }): string {
-    if (prompts.length === 0) {
-      return "Create a video based on your preferences. Start by liking some videos or searching for content you enjoy.";
-    }
+    return `# AI Video Generation Prompt
 
-    if (prompts.length === 1) {
-      return prompts[0];
-    }
+## Combined Video Concept
+Create a ${structured?.duration || '30-60 second'} ${structured?.style || 'cinematic'} video that incorporates multiple themes from the user's preferences.
 
-    // Extract meaningful key elements from each prompt
-    const keyElements = prompts.map((prompt, index) => {
-      let element = prompt.trim();
-      console.log(`🔍 Processing prompt ${index + 1}:`, element.substring(0, 100) + '...');
+## Content Themes
+${prompts.map((prompt, i) => `**Theme ${i + 1}:** ${prompt}`).join('\n\n')}
 
-      // Remove common video generation prefixes
-      element = element.replace(/^(?:Create|Produce|Make|Generate|Film)\s*(?:a|an|the)?\s*/i, '');
-      element = element.replace(/\s*(?:video|content|footage)\s*/gi, ' ');
-      element = element.replace(/\s*\(\d+-\d+\s*(?:minutes?|seconds?)\)/gi, '');
-      element = element.replace(/\s*\(\d+\s*(?:minutes?|seconds?)\)/gi, '');
-
-      // Enhanced pattern matching for better subject extraction
-      const subjectPatterns = [
-        // Pattern 1: "person/people doing activity" - prioritize human subjects
-        /(?:featuring|showing|of)\s+(?:a|an|the)?\s*([a-zA-Z\s]+(?:person|people|man|woman|child|children|individual|group))\s+(?:who|that|performing|doing|playing|dancing|working|engaging)/i,
-
-        // Pattern 2: "adjective + noun + action" - good descriptive subjects
-        /(?:featuring|showing|of)?\s*(?:a|an|the)?\s*([a-zA-Z]+\s+[a-zA-Z]+)\s+(?:performing|doing|playing|dancing|cycling|swimming|running|walking|working|creating|practicing)/i,
-
-        // Pattern 3: Main subject at start of cleaned text
-        /^(?:a|an|the)?\s*([a-zA-Z\s]{4,20})\s+(?:in|at|on|during|while|performing|doing)/i,
-
-        // Pattern 4: Activity-focused extraction
-        /(?:featuring|showing|capturing|documenting)\s+(?:a|an|the)?\s*([a-zA-Z\s]{4,25})/i,
-
-        // Pattern 5: Simple noun phrases
-        /^(?:a|an|the)?\s*([a-zA-Z]+(?:\s+[a-zA-Z]+){1,2})/i
-      ];
-
-      let extracted = '';
-      for (const pattern of subjectPatterns) {
-        const match = element.match(pattern);
-        if (match && match[1]) {
-          let candidate = match[1].trim();
-
-          // Validate the extraction
-          if (candidate.length >= 4 && candidate.length <= 30 &&
-              !candidate.match(/^(?:the|and|that|with|from|this|they|have|been|were|their|video|content|footage)$/i)) {
-            extracted = candidate;
-            break;
-          }
-        }
-      }
-
-      // Fallback: extract meaningful noun phrases
-      if (!extracted) {
-        const words = element.split(/\s+/).filter(word =>
-          word.length > 3 &&
-          !['the', 'and', 'that', 'with', 'from', 'this', 'they', 'have', 'been', 'were', 'their', 'video', 'content', 'footage', 'scene', 'showing', 'featuring'].includes(word.toLowerCase()) &&
-          !word.match(/^(?:performing|doing|playing|dancing|cycling|swimming|running|walking|working|creating|practicing)$/i)
-        );
-
-        if (words.length >= 2) {
-          extracted = words.slice(0, 2).join(' ');
-        } else if (words.length === 1) {
-          extracted = words[0];
-        }
-      }
-
-      // Clean up the extracted subject
-      if (extracted) {
-        // Remove video-related adjectives
-        extracted = extracted.replace(/\b(?:heartwarming|captivating|engaging|dynamic|compelling|informative|cinematic|documentary|thrilling|elaborate|stunning|beautiful|amazing|incredible|professional|high-quality)\b/gi, '');
-
-        // Clean up spacing and punctuation
-        extracted = extracted.replace(/\s+/g, ' ').trim();
-        extracted = extracted.replace(/^[,.\s]+|[,.\s]+$/g, '');
-
-        // Capitalize first letter of each word
-        extracted = extracted.replace(/\b\w/g, l => l.toUpperCase());
-      }
-
-      // Final validation and fallback
-      if (!extracted || extracted.length < 4 || extracted.match(/^(?:A|The|And|That|With|From)$/i)) {
-        extracted = `Content Theme ${index + 1}`;
-      }
-
-      console.log(`✅ Extracted subject ${index + 1}:`, extracted);
-      return extracted;
-    });
-
-    // Create enhanced structured video generation prompt for AI video generators
-    const contextDescription = this.generateUserContext(keyElements, structured);
-    const structuredPrompt = `# AI Video Generation Prompt
-
-## Context
-${contextDescription}
-
-## Video Specifications
-
-### Content
-**Main Subjects:**
-${keyElements.map(element => `  • ${element}`).join('\n')}
-
-**Actions & Movements:**
-${structured?.actions?.map(action => `  • ${action}`) || ['  • engaging activities']}
-
-### Technical Specifications
+## Technical Specifications
 - **Style:** ${structured?.style || 'cinematic'}
 - **Duration:** ${structured?.duration || '30-60 seconds'}
 - **Setting:** ${structured?.setting || 'dynamic environments'}
-- **Mood/Tone:** ${structured?.mood || 'engaging'}
-- **Lighting:** ${structured?.lighting || 'high quality, professional lighting'}
-- **Color Palette:** ${(structured?.colors || ['vibrant', 'cohesive']).join(', ')}
+- **Mood:** ${structured?.mood || 'engaging'}
+- **Lighting:** ${structured?.lighting || 'high quality lighting'}
+- **Colors:** ${structured?.colors?.join(', ') || 'vibrant, cohesive'}
+- **Actions:** ${structured?.actions?.join(', ') || 'engaging activities'}
 
-### Production Notes
-- Focus on visual storytelling
-- Maintain consistent style throughout
-- Ensure smooth transitions between scenes
-- Optimize for social media sharing
+## Production Notes
+- Seamlessly blend all content themes
+- Maintain visual coherence throughout
+- Focus on storytelling and engagement
+- Optimize for target duration
 
 ---
 *Generated from ${prompts.length} personalized content themes*`;
-
-    return structuredPrompt;
   }
 
   // Generate user context for AI video generators
