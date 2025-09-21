@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { Heart, Sparkles, X, Search, Menu, Settings } from 'lucide-react';
 
 interface Video {
   id: string;
@@ -354,18 +355,34 @@ export default function Home() {
       const windowHeight = window.innerHeight;
       const documentHeight = document.documentElement.scrollHeight;
 
-      // Load more when user is 200px from bottom
-      if (scrollTop + windowHeight >= documentHeight - 200) {
+      // More aggressive loading - trigger when within 500px of bottom
+      const threshold = 500;
+      const isNearBottom = scrollTop + windowHeight >= documentHeight - threshold;
+      
+      if (isNearBottom) {
+        console.log('🔄 Triggering infinite scroll load...', {
+          scrollTop,
+          windowHeight,
+          documentHeight,
+          threshold,
+          hasMore: currentPagination?.hasMore,
+          loading,
+          isLoadingRef: isLoadingRef.current
+        });
         loadMore();
       }
     };
 
-    // Throttled scroll handler
-    const handleScroll = throttle(handleScrollInternal, 200);
+    // More responsive scroll handler with shorter throttle
+    const handleScroll = throttle(handleScrollInternal, 100);
 
+    // Add both scroll and resize listeners for better detection
     window.addEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleScroll);
+    
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
     };
   }, [loading, pagination.hasMore, searchResults?.pagination?.hasMore, moreLikeThisDialog.isOpen, isSearchMode]);
 
@@ -590,7 +607,7 @@ export default function Home() {
       )}
 
         {/* Main Content */}
-        <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 ${moreLikeThisDialog?.isOpen || searchQuery ? 'pt-20' : 'pt-30'}`}>
+        <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 ${moreLikeThisDialog?.isOpen ? 'pt-30' : searchQuery ? 'pt-20' : 'pt-30'}`}>
         {/* Video Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
           {/* Shimmer Loading Cards */}
@@ -644,11 +661,11 @@ export default function Home() {
               key={video.id}
               className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group"
             >
-              {/* Thumbnail */}
+              {/* Thumbnail with Overlay Buttons */}
               <div 
                 style={{ 
                   position: 'relative',
-                  height: '300px', 
+                  height: '400px', 
                   width: '100%', 
                   backgroundColor: '#f3f4f6',
                   overflow: 'hidden'
@@ -663,79 +680,57 @@ export default function Home() {
                     objectFit: 'cover',
                     display: 'block'
                   }}
-                  onLoad={() => console.log('✅ Image loaded:', video.thumbnail)}
+                  onLoad={() => {}}
                   onError={(e) => {
                     console.error('❌ Image failed:', video.thumbnail);
-                    e.currentTarget.src = 'https://picsum.photos/400/600?random=' + video.id;
+                    // No fallback - let the image fail gracefully
                   }}
                 />
                 
-                {/* Overlay for video indicator */}
-                <div style={{
-                  position: 'absolute',
-                  top: '16px',
-                  right: '16px',
-                  background: 'linear-gradient(to right, #9333ea, #ec4899)',
-                  color: 'white',
-                  padding: '4px 12px',
-                  borderRadius: '9999px',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                }}>
-                  📹 VIDEO
-                </div>
-                
-                {/* Hover overlay */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  backgroundColor: 'rgba(0, 0, 0, 0)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'background-color 0.3s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.2)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-                }}
+                {/* More Like This Button - Top Right */}
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMoreLikeThis(video.id, video.title, video.description);
+                  }}
+                  disabled={moreLikeThisLoading === video.id}
+                  className="absolute top-3 right-3 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group-hover:scale-110"
+                  aria-label="More Like This"
                 >
-                  <div style={{
-                    opacity: 0,
-                    transition: 'opacity 0.3s ease',
-                    width: '48px',
-                    height: '48px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
+                  {moreLikeThisLoading === video.id ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-purple-200 border-t-purple-500"></div>
+                  ) : (
+                    <Sparkles className="h-5 w-5 text-purple-600" />
+                  )}
+                </button>
+
+                {/* Like Button - Bottom Right */}
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLike(video.id);
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = '1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = '0';
-                  }}
-                  >
-                    <svg style={{ width: '24px', height: '24px', color: '#9333ea' }} fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </div>
-                </div>
+                  className="absolute bottom-3 right-3 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg hover:shadow-xl transition-all duration-200 group-hover:scale-110"
+                  aria-label={likedVideos.has(video.id) ? "Unlike" : "Like"}
+                >
+                  <Heart 
+                    className={`h-5 w-5 transition-colors duration-200 ${
+                      likedVideos.has(video.id) 
+                        ? 'text-red-500 fill-current' 
+                        : 'text-gray-600 hover:text-red-500'
+                    }`} 
+                  />
+                </button>
               </div>
 
               {/* Content */}
               <div className="p-4">
-                <h3 className="font-semibold text-gray-900 mb-2 line-clamp-1 group-hover:text-purple-600 transition-colors">
-                  {video.title}
-                </h3>
+                {/* Video Title - Only show in developer mode */}
+                {isDeveloperMode && (
+                  <h3 className="font-semibold text-gray-900 mb-2 line-clamp-1 group-hover:text-purple-600 transition-colors">
+                    {video.title}
+                  </h3>
+                )}
                 <p className="text-gray-600 text-sm line-clamp-3 leading-relaxed">
                   {video.description}
                 </p>
@@ -755,46 +750,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Action Buttons */}
-                <div className="mt-4 flex gap-2">
-                  <button 
-                    onClick={() => handleLike(video.id)}
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                      likedVideos.has(video.id)
-                        ? 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white shadow-md hover:shadow-lg'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700 hover:text-gray-900'
-                    }`}
-                  >
-                    {likedVideos.has(video.id) ? (
-                      <>
-                        <span className="text-lg">❤️</span>
-                        <span>Liked</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-lg">🤍</span>
-                        <span>Like</span>
-                      </>
-                    )}
-                  </button>
-                  <button 
-                    onClick={() => handleMoreLikeThis(video.id, video.title, video.description)}
-                    disabled={moreLikeThisLoading === video.id}
-                    className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:shadow-none"
-                  >
-                    {moreLikeThisLoading === video.id ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        <span>Finding...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-lg">🔍</span>
-                        <span>More Like This</span>
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           ))}
@@ -845,38 +800,6 @@ export default function Home() {
           </>
         )}
 
-        {/* Load More Button */}
-        {(() => {
-          const shouldShow = ((moreLikeThisDialog.isOpen || isSearchMode) ? (searchResults?.pagination?.hasMore ?? true) : pagination.hasMore) && !loading;
-          console.log('Button visibility check:', {
-            moreLikeThisDialog: moreLikeThisDialog.isOpen,
-            isSearchMode,
-            searchResultsPagination: searchResults?.pagination,
-            pagination,
-            loading,
-            shouldShow
-          });
-          return shouldShow;
-        })() && (
-          <div className="flex justify-center mt-12">
-            <button
-              onClick={loadMore}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
-            >
-              <span>
-                {moreLikeThisDialog.isOpen 
-                  ? 'Load More Similar Videos' 
-                  : isSearchMode 
-                    ? 'Load More Search Results' 
-                    : 'Load More Videos'
-                }
-              </span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-          </div>
-        )}
 
         {/* Infinite Scroll Loading Indicator */}
         {loading && pagination.hasMore && (
