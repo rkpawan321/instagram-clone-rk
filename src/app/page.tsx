@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart, Sparkles, X, Search, Menu, Settings } from 'lucide-react';
+import Image from 'next/image';
+import { Heart, Sparkles } from 'lucide-react';
 
 interface Video {
   id: string;
@@ -25,7 +26,12 @@ interface VideoResponse {
 }
 
 interface SimilarityResponse {
-  pagination: any;
+  pagination: {
+    offset: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  };
   videos: Video[];
   query?: string;
   videoId?: string;
@@ -62,24 +68,13 @@ export default function Home() {
     hasMore: false,
   });
   const isLoadingRef = useRef(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout>();
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastScrollTime = useRef(0);
 
-  // Debounce function for API calls
-  const debounce = (func: Function, delay: number = 300) => {
-    return (...args: any[]) => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(() => {
-        func(...args);
-      }, delay);
-    };
-  };
 
   // Throttle function for scroll events
-  const throttle = (func: Function, delay: number = 200) => {
-    return (...args: any[]) => {
+  const throttle = (func: (...args: unknown[]) => void, delay: number = 200) => {
+    return (...args: unknown[]) => {
       const now = Date.now();
       if (now - lastScrollTime.current >= delay) {
         lastScrollTime.current = now;
@@ -88,7 +83,7 @@ export default function Home() {
     };
   };
 
-  const fetchVideos = async (offset = 0, append = false) => {
+  const fetchVideos = useCallback(async (offset = 0, append = false) => {
     // Prevent multiple concurrent calls when appending
     if (append && isLoadingRef.current) return;
     
@@ -118,13 +113,13 @@ export default function Home() {
         isLoadingRef.current = false;
       }
     }
-  };
+  }, []);
 
   const fetchLikedVideos = async () => {
     try {
       const response = await fetch(`/api/interactions?userId=demo-user-1&type=like`);
       const data = await response.json();
-      const likedVideoIds = new Set(data.interactions.map((interaction: any) => interaction.videoId));
+      const likedVideoIds = new Set<string>(data.interactions.map((interaction: { videoId: string }) => interaction.videoId));
       console.log('✅ Fetched liked videos:', Array.from(likedVideoIds));
       setLikedVideos(likedVideoIds);
     } catch (error) {
@@ -132,7 +127,7 @@ export default function Home() {
     }
   };
 
-  const saveCustomInput = async (text: string) => {
+  const saveCustomInput = useCallback(async (text: string) => {
     try {
       const response = await fetch('/api/custom-input', {
         method: 'POST',
@@ -149,9 +144,9 @@ export default function Home() {
     } catch (error) {
       console.error('Error saving custom input:', error);
     }
-  };
+  }, []);
 
-  const searchSimilar = async (query: string, append = false) => {
+  const searchSimilar = useCallback(async (query: string, append = false) => {
     if (!query.trim()) return;
     
     // Prevent multiple concurrent calls
@@ -201,7 +196,7 @@ export default function Home() {
       }
       isLoadingRef.current = false;
     }
-  };
+  }, [videos.length, saveCustomInput]);
 
   const handleMoreLikeThis = async (videoId: string, videoTitle: string, videoDescription: string, editedDescription?: string) => {
     try {
@@ -314,7 +309,7 @@ export default function Home() {
     // Load developer mode from localStorage
     const savedDeveloperMode = localStorage.getItem('developerMode') === 'true';
     setIsDeveloperMode(savedDeveloperMode);
-  }, []);
+  }, [fetchVideos]);
 
   // Console log for moreLikeThisDialog changes
   useEffect(() => {
@@ -338,6 +333,77 @@ export default function Home() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isMenuOpen]);
+
+  const loadMoreSimilarVideos = useCallback(async () => {
+    if (!moreLikeThisDialog.videoId) return;
+    
+    // Prevent multiple concurrent calls
+    if (isLoadingRef.current) return;
+    
+    try {
+      isLoadingRef.current = true;
+      setLoading(true);
+      const offset = videos.length;
+      const response = await fetch(`/api/videos/${moreLikeThisDialog.videoId}/more-like-this`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          editedDescription: moreLikeThisDialog.videoDescription,
+          userId: 'demo-user-1',
+          offset: offset,
+          limit: 20
+        })
+      });
+      const data: SimilarityResponse = await response.json();
+      
+      // Append new videos to existing ones
+      if (data && data.videos && Array.isArray(data.videos)) {
+        setVideos(prev => [...prev, ...data.videos]);
+        setSearchResults(prev => ({
+          ...prev,
+          videos: [...(prev?.videos || []), ...data.videos],
+          total: data.total, // Update the total count
+          pagination: data.pagination
+        }));
+      } else {
+        console.error('Invalid data received from API:', data);
+      }
+    } catch (error) {
+      console.error('Error loading more similar videos:', error);
+    } finally {
+      setLoading(false);
+      isLoadingRef.current = false;
+    }
+  }, [moreLikeThisDialog.videoId, moreLikeThisDialog.videoDescription, videos.length]);
+
+  const loadMoreInternal = useCallback(() => {
+    if (moreLikeThisDialog.isOpen) {
+      // Handle "More Like This" case - always call more-like-this API
+      if (searchResults?.pagination?.hasMore && !loading && !isLoadingRef.current) {
+        loadMoreSimilarVideos();
+      }
+    } else if (isSearchMode && searchQuery) {
+      // In search mode, load more search results
+      if (searchResults?.pagination?.hasMore && !loading && !isLoadingRef.current) {
+        searchSimilar(searchQuery, true);
+      }
+    } else if (pagination.hasMore && !loading && !isLoadingRef.current) {
+      // In normal mode, load more videos
+      fetchVideos(pagination.offset + pagination.limit, true);
+    }
+  }, [moreLikeThisDialog.isOpen, searchResults?.pagination?.hasMore, loading, isSearchMode, searchQuery, pagination.hasMore, pagination.offset, pagination.limit, loadMoreSimilarVideos, searchSimilar, fetchVideos]);
+
+  // Debounced loadMore function
+  const loadMore = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      loadMoreInternal();
+    }, 300);
+  }, [loadMoreInternal]);
 
   // Infinite scroll loading
   useEffect(() => {
@@ -384,71 +450,7 @@ export default function Home() {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleScroll);
     };
-  }, [loading, pagination.hasMore, searchResults?.pagination?.hasMore, moreLikeThisDialog.isOpen, isSearchMode]);
-
-  const loadMoreSimilarVideos = async () => {
-    if (!moreLikeThisDialog.videoId) return;
-    
-    // Prevent multiple concurrent calls
-    if (isLoadingRef.current) return;
-    
-    try {
-      isLoadingRef.current = true;
-      setLoading(true);
-      const offset = videos.length;
-      const response = await fetch(`/api/videos/${moreLikeThisDialog.videoId}/more-like-this`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          editedDescription: moreLikeThisDialog.videoDescription,
-          userId: 'demo-user-1',
-          offset: offset,
-          limit: 20
-        })
-      });
-      const data: SimilarityResponse = await response.json();
-      
-      // Append new videos to existing ones
-      if (data && data.videos && Array.isArray(data.videos)) {
-        setVideos(prev => [...prev, ...data.videos]);
-        setSearchResults(prev => ({
-          ...prev,
-          videos: [...(prev?.videos || []), ...data.videos],
-          total: data.total, // Update the total count
-          pagination: data.pagination
-        }));
-      } else {
-        console.error('Invalid data received from API:', data);
-      }
-    } catch (error) {
-      console.error('Error loading more similar videos:', error);
-    } finally {
-      setLoading(false);
-      isLoadingRef.current = false;
-    }
-  };
-
-  const loadMoreInternal = () => {
-    if (moreLikeThisDialog.isOpen) {
-      // Handle "More Like This" case - always call more-like-this API
-      if (searchResults?.pagination?.hasMore && !loading && !isLoadingRef.current) {
-        loadMoreSimilarVideos();
-      }
-    } else if (isSearchMode && searchQuery) {
-      // In search mode, load more search results
-      if (searchResults?.pagination?.hasMore && !loading && !isLoadingRef.current) {
-        searchSimilar(searchQuery, true);
-      }
-    } else if (pagination.hasMore && !loading && !isLoadingRef.current) {
-      // In normal mode, load more videos
-      fetchVideos(pagination.offset + pagination.limit, true);
-    }
-  };
-
-  // Debounced loadMore function
-  const loadMore = debounce(loadMoreInternal, 300);
+  }, [loading, pagination.hasMore, searchResults?.pagination.hasMore, moreLikeThisDialog.isOpen, isSearchMode, searchResults?.pagination, pagination, loadMore]);
 
   const toggleDeveloperMode = () => {
     const newMode = !isDeveloperMode;
@@ -580,11 +582,11 @@ export default function Home() {
               </svg>
               {moreLikeThisDialog.isOpen ? (
                 <span>
-                  Showing videos similar to: <span className="font-semibold text-purple-700">"{moreLikeThisDialog.videoDescription}"</span>
+                  Showing videos similar to: <span className="font-semibold text-purple-700">&ldquo;{moreLikeThisDialog.videoDescription}&rdquo;</span>
                 </span>
               ) : (
                 <span>
-                  Showing results for: <span className="font-semibold text-purple-700">"{searchResults.query}"</span>
+                  Showing results for: <span className="font-semibold text-purple-700">&ldquo;{searchResults.query}&rdquo;</span>
                 </span>
               )}
             </div>
@@ -670,20 +672,14 @@ export default function Home() {
                   backgroundColor: '#f3f4f6',
                   overflow: 'hidden'
                 }}
-              >
-                <img
+          >
+            <Image
                   src={video.thumbnail}
                   alt={video.title}
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    objectFit: 'cover',
-                    display: 'block'
-                  }}
-                  onLoad={() => {}}
-                  onError={(e) => {
+                  fill
+                  className="object-cover"
+                  onError={() => {
                     console.error('❌ Image failed:', video.thumbnail);
-                    // No fallback - let the image fail gracefully
                   }}
                 />
                 
@@ -907,7 +903,7 @@ export default function Home() {
                       // Try router first, fallback to window.location
                       try {
                         router.push('/statistics');
-                      } catch (error) {
+                      } catch {
                         console.log('Router failed, using window.location');
                         window.location.href = '/statistics';
                       }
